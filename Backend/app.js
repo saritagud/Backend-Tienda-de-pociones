@@ -22,7 +22,7 @@ const potionSchema = new mongoose.Schema({
   ingredients: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Ingredient'
-  }],
+  }]
 });
   
   const Potion = mongoose.model('Potion', potionSchema);
@@ -40,14 +40,15 @@ const Ingredient = mongoose.model('Ingredient', ingredientSchema);
 //Agregar poción
 app.post('/agregar', (req, res) => {
   const potionData = req.body;
+  const ingredients = req.body.ingredients;
 
   const newPotion = new Potion(potionData);
 
   newPotion.save()
     .then((potion) => {
       let ingredientPromises = [];
-      for (let i = 0; i < potion.ingredients.length; i++) {
-        const ingredientId = potion.ingredients[i];
+      for (let i = 0; i < ingredients.length; i++) {
+        const ingredientId = ingredients[i];
         ingredientPromises.push(
           Ingredient.findById(ingredientId)
             .then((ingredient) => {
@@ -105,6 +106,7 @@ app.get('/potions/:id', (req, res) => {
 app.put('/editar/:id', (req, res) => {
   const potionId = req.params.id;
   const potionData = req.body;
+  const ingredients = req.body.ingredients;
 
   Potion.findById(potionId)
     .then((potion) => {
@@ -117,15 +119,14 @@ app.put('/editar/:id', (req, res) => {
         potion.description = potionData.description;
         potion.price = potionData.price;
         potion.quantity = potionData.quantity;
-        potion.image = potionData.image;
         potion.category = potionData.category;
-        potion.ingredients = potionData.ingredients;
+        potion.ingredients = ingredients;
 
         let ingredientPromises = [];
         let previousIngredientPromises = [];
 
-        for (let i = 0; i < potion.ingredients.length; i++) {
-          const ingredientId = potion.ingredients[i];
+        for (let i = 0; i < ingredients.length; i++) {
+          const ingredientId = ingredients[i];
           ingredientPromises.push(
             Ingredient.findById(ingredientId)
               .then((ingredient) => {
@@ -139,7 +140,7 @@ app.put('/editar/:id', (req, res) => {
 
         for (let i = 0; i < currentIngredients.length; i++) {
           const ingredientId = currentIngredients[i];
-          if (!potion.ingredients.includes(ingredientId)) {
+          if (!ingredients.includes(ingredientId)) {
             previousIngredientPromises.push(
               Ingredient.findById(ingredientId)
                 .then((ingredient) => {
@@ -198,6 +199,17 @@ app.delete('/eliminar/:id', (req, res) => {
         .catch(error => res.status(500).json({ error: 'No se ha podido actualizar los ingredientes' }));
     })
     .catch(error => res.status(500).json({ error: 'No se ha podido obtener la poción' }));
+});
+
+// Ver ingredientes
+app.get('/ingredients', (req, res) => {
+  Ingredient.find()
+    .then((ingredients) => {
+      res.json(ingredients);
+    })
+    .catch((error) => {
+      res.status(500).json({ error: 'No se ha podido obtener la lista de ingredientes' });
+    });
 });
 
 
