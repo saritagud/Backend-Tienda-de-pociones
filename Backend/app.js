@@ -11,32 +11,67 @@ mongoose.connect('mongodb+srv://tiendaPociones:tiendaPociones@tiendapociones.3dt
   useUnifiedTopology: true
 });
 
+
+// Esquema pociones
 const potionSchema = new mongoose.Schema({
   name: String,
   description: String,
   price: Number,
   quantity: Number,
-  image: String,
   category: String,
-  ingredients: [String]
+  ingredients: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Ingredient'
+  }],
 });
+  
+  const Potion = mongoose.model('Potion', potionSchema);
 
-const Potion = mongoose.model('Potion', potionSchema);
+// Esquema ingredientes
+const ingredientSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    quantity: { type: Number, required: true },
+    description: { type: String, required: true },
+  });
+  
+const Ingredient = mongoose.model('Ingredient', ingredientSchema);
+  
 
-// Agregar poción
-app.post('/potions', (req, res) => {
+//Agregar poción
+app.post('/agregar', (req, res) => {
   const potionData = req.body;
 
   const newPotion = new Potion(potionData);
 
   newPotion.save()
     .then((potion) => {
-      res.json(potion);
+      let ingredientPromises = [];
+      for (let i = 0; i < potion.ingredients.length; i++) {
+        const ingredientId = potion.ingredients[i];
+        ingredientPromises.push(
+          Ingredient.findById(ingredientId)
+            .then((ingredient) => {
+              if (ingredient) {
+                ingredient.quantity -= 1;
+                return ingredient.save();
+              }
+            })
+        );
+      }
+
+      Promise.all(ingredientPromises)
+        .then(() => {
+          res.json(potion);
+        })
+        .catch((error) => {
+          res.status(500).json({ error: 'No se ha podido actualizar los ingredientes' });
+        });
     })
     .catch((error) => {
-      res.status(500).json({ error: 'Error al crear la poción' });
+      res.status(500).json({ error: 'No se ha podido crear la poción' });
     });
 });
+
 
 // Ver pociones
 app.get('/potions', (req, res) => {
@@ -45,7 +80,7 @@ app.get('/potions', (req, res) => {
       res.json(potions);
     })
     .catch((error) => {
-      res.status(500).json({ error: 'Error al obtener las pociones' });
+      res.status(500).json({ error: 'No se ha podido obtener la poción' });
     });
 });
 
@@ -56,50 +91,115 @@ app.get('/potions/:id', (req, res) => {
   Potion.findById(potionId)
     .then((potion) => {
       if (!potion) {
-        res.status(404).json({ error: 'Poción no encontrada' });
+        res.status(404).json({ error: 'No se ha encontrado la poción' });
       } else {
         res.json(potion);
       }
     })
     .catch((error) => {
-      res.status(500).json({ error: 'Error al obtener la poción' });
+      res.status(500).json({ error: 'No se ha podido obtener la poción' });
     });
 });
 
-//Editar pocion
-app.put('/potions/:id', (req, res) => {
+//Editar poción
+app.put('/editar/:id', (req, res) => {
   const potionId = req.params.id;
   const potionData = req.body;
 
-  Potion.findByIdAndUpdate(potionId, potionData, { new: true })
+  Potion.findById(potionId)
     .then((potion) => {
       if (!potion) {
-        res.status(404).json({ error: 'Poción no encontrada' });
+        res.status(404).json({ error: 'No se ha encontrado la poción' });
       } else {
-        res.json(potion);
+        const currentIngredients = potion.ingredients;
+
+        potion.name = potionData.name;
+        potion.description = potionData.description;
+        potion.price = potionData.price;
+        potion.quantity = potionData.quantity;
+        potion.image = potionData.image;
+        potion.category = potionData.category;
+        potion.ingredients = potionData.ingredients;
+
+        let ingredientPromises = [];
+        let previousIngredientPromises = [];
+
+        for (let i = 0; i < potion.ingredients.length; i++) {
+          const ingredientId = potion.ingredients[i];
+          ingredientPromises.push(
+            Ingredient.findById(ingredientId)
+              .then((ingredient) => {
+                if (ingredient) {
+                  ingredient.quantity -= 1;
+                  return ingredient.save();
+                }
+              })
+          );
+        }
+
+        for (let i = 0; i < currentIngredients.length; i++) {
+          const ingredientId = currentIngredients[i];
+          if (!potion.ingredients.includes(ingredientId)) {
+            previousIngredientPromises.push(
+              Ingredient.findById(ingredientId)
+                .then((ingredient) => {
+                  if (ingredient) {
+                    ingredient.quantity += 1;
+                    return ingredient.save();
+                  }
+                })
+            );
+          }
+        }
+
+        Promise.all([...ingredientPromises, ...previousIngredientPromises])
+          .then(() => {
+            potion.save()
+              .then((updatedPotion) => {
+                res.json(updatedPotion);
+              })
+              .catch((error) => {
+                res.status(500).json({ error: 'No se ha podido actualizar la poción' });
+              });
+          })
+          .catch((error) => {
+            res.status(500).json({ error: 'No se ha podido actualizar los ingredientes' });
+          });
       }
     })
     .catch((error) => {
-      res.status(500).json({ error: 'Error al actualizar la poción' });
+      res.status(500).json({ error: 'No se ha podido obtener la poción' });
     });
 });
 
-// Eliminar pocion
-app.delete('/potions/:id', (req, res) => {
+
+// Eliminar poción
+app.delete('/eliminar/:id', (req, res) => {
   const potionId = req.params.id;
 
-  Potion.findByIdAndRemove(potionId)
-    .then((potion) => {
+  Potion.findById(potionId)
+    .populate('ingredients')
+    .then(potion => {
       if (!potion) {
-        res.status(404).json({ error: 'Poción no encontrada' });
-      } else {
-        res.json({ message: 'Poción eliminada correctamente' });
+        return res.status(404).json({ error: 'No se ha encontrado la poción' });
       }
+
+      potion.ingredients.forEach(ingredient => {
+        ingredient.quantity += ingredient.quantity;
+      });
+
+      Promise.all(potion.ingredients.map(ingredient => ingredient.save()))
+        .then(() => {
+          
+          Potion.findByIdAndRemove(potionId)
+            .then(() => res.json({ message: 'Se ha eliminado la poción' }))
+            .catch(error => res.status(500).json({ error: 'No se ha podido eliminar la poción' }));
+        })
+        .catch(error => res.status(500).json({ error: 'No se ha podido actualizar los ingredientes' }));
     })
-    .catch((error) => {
-      res.status(500).json({ error: 'Error al eliminar la poción' });
-    });
+    .catch(error => res.status(500).json({ error: 'No se ha podido obtener la poción' }));
 });
+
 
 app.listen(3000, () => {
   console.log('server on port 3000');
